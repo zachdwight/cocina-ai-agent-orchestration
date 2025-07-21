@@ -108,6 +108,6 @@ For more flexible management, you can define your agents in a separate JSON file
 ```
 
 To use an external configuration file, initialize the `DockerAgentOrchestrator` with the file path:
-```json
+```ruby
 orchestrator = DockerAgentOrchestrator.new("agents_config.json")
 ```
