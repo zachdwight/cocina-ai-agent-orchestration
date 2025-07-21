@@ -75,3 +75,10 @@ The script comes with a default set of agents defined within the `DockerAgentOrc
     ports: []
   }
 ]
+```
+
+External JSON Configuration (Recommended for Production)
+
+For more flexible management, you can define your agents in a separate JSON file (e.g., `agents_config.json`):
+
+
