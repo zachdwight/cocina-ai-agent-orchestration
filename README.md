@@ -77,8 +77,37 @@ The script comes with a default set of agents defined within the `DockerAgentOrc
 ]
 ```
 
-External JSON Configuration (Recommended for Production)
+Optional: External JSON Configuration (Recommended for Production)
 
 For more flexible management, you can define your agents in a separate JSON file (e.g., `agents_config.json`):
+```json
+[
+  {
+    "name": "chef_agent",
+    "image": "my_ai_agent_chef:latest",
+    "command": "python /app/chef_agent.py",
+    "env": { "API_KEY": "your_chef_api_key", "AGENT_ID": "chef_001" },
+    "ports": ["8000:8000"]
+  },
+  {
+    "name": "sous_agent",
+    "image": "my_ai_agent_sous:latest",
+    "command": "python /app/sous_agent.py",
+    "env": { "API_KEY": "your_sous_api_key", "AGENT_ID": "sous_001" },
+    "ports": []
+  },
+  {
+    "name": "data_logger",
+    "image": "my_data_logger:1.0",
+    "command": "node /app/logger.js",
+    "env": { "LOG_LEVEL": "info" },
+    "ports": []
+  }
+]
 
+```
 
+To use an external configuration file, initialize the `DockerAgentOrchestrator` with the file path:
+```json
+orchestrator = DockerAgentOrchestrator.new("agents_config.json")
+```
