@@ -111,3 +111,21 @@ To use an external configuration file, initialize the `DockerAgentOrchestrator` 
 ```ruby
 orchestrator = DockerAgentOrchestrator.new("agents_config.json")
 ```
+
+## Usage
+
+---
+
+Run the script from your terminal, passing one of the supported actions as an argument:
+
+```bash
+ruby cocina.rb [action]
+```
+
+Available Actions:
+- `start` : Builds Docker images (if their context directory and Dockerfile exist) and then starts all defined AI agent containers.
+- `stop` : Stops all currently running AI agent containers managed by Cocina.
+- `monitor` : Displays the current running status (container ID, status, name) of all configured agents.
+- `restart` : Stops all agents and then starts them again.
+- `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
+- `full_cycle` : Executes a complete lifecycle: stops, cleans up, builds (if needed), and then starts all agents. This is useful for a fresh deployment.
