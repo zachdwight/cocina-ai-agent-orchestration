@@ -157,3 +157,15 @@ Agent: sous_agent, Status: Up Less than a second, ID: d78fd2ce8f8d
 --- Monitoring Complete ---
 
 ```
+
+Let a few minutes pass by for the agents to complete their tasks...
+
+``` bash
+me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb monitor
+
+--- Monitoring AI Agents ---
+Agent: chef_agent is not running.
+Agent: sous_agent is not running.
+No AI agents are currently running.
+--- Monitoring Complete ---
+```
