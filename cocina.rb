@@ -207,12 +207,12 @@ if __FILE__ == $0
   when "full_cycle"
     orchestrator.orchestrate(:full_cycle)
   else
-    puts "Usage: ruby agents_orchestrator.rb [start|stop|monitor|restart|cleanup|full_cycle]"
-    puts "\nExample: ruby agents_orchestrator.rb start"
+    puts "Usage: ruby cocina.rb [start|stop|monitor|restart|cleanup|full_cycle]"
+    puts "\nExample: ruby cocina.rb start"
     puts "  To start all defined AI agent containers."
-    puts "\nExample: ruby agents_orchestrator.rb stop"
+    puts "\nExample: ruby cocina.rb stop"
     puts "  To stop all running AI agent containers."
-    puts "\nExample: ruby agents_orchestrator.rb full_cycle"
+    puts "\nExample: cocina.rb full_cycle"
     puts "  To stop, clean up, build (if needed), and then start all agents."
   end
 end
