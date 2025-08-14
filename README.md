@@ -129,3 +129,31 @@ Available Actions:
 - `restart` : Stops all agents and then starts them again.
 - `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
 - `full_cycle` : Executes a complete lifecycle: stops, cleans up, builds (if needed), and then starts all agents. This is useful for a fresh deployment.
+
+---
+
+## Example 
+
+```bash
+me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb start
+
+--- Building Docker Images ---
+Attempting to build image: my_ai_agent_chef:latest from ./my_ai_agent_chef
+Successfully built image: my_ai_agent_chef:latest
+Attempting to build image: my_ai_agent_sous:latest from ./my_ai_agent_sous
+Successfully built image: my_ai_agent_sous:latest
+--- Image Building Complete ---
+
+--- Starting AI Agents ---
+Starting container for chef_agent...
+Started chef_agent (Container ID: b07d6ff5e36b8c7faf55c780072b2468e72d13dab327fe5652c17b4a81ec72b7)
+Starting container for sous_agent...
+Started sous_agent (Container ID: d78fd2ce8f8dc3e077f51d93426091fd054df517019f96a2bd23251539bb75ee)
+--- AI Agents Started ---
+
+--- Monitoring AI Agents ---
+Agent: chef_agent, Status: Up Less than a second, ID: b07d6ff5e36b
+Agent: sous_agent, Status: Up Less than a second, ID: d78fd2ce8f8d
+--- Monitoring Complete ---
+
+```
