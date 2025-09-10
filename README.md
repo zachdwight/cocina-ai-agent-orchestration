@@ -8,7 +8,9 @@
 * **Docker Integration:** Leverages `docker build`, `docker run`, `docker stop`, and `docker ps` commands to manage containers.
 * **Lifecycle Management:** Supports various actions:
     * **Start:** Builds images (if Dockerfile found) and starts all defined agents.
+    * **Start_Agent:** Starts specific agent by name.
     * **Stop:** Halts all running agent containers.
+    * **Stop_Agent:** Stops specific agent by name.
     * **Monitor:** Checks and reports the status of your agents.
     * **Restart:** Stops and then restarts all agents.
     * **Cleanup:** Removes stopped agent containers.
@@ -132,6 +134,8 @@ ruby cocina.rb [action]
 Available Actions:
 - `start` : Builds Docker images (if their context directory and Dockerfile exist) and then starts all defined AI agent containers.
 - `stop` : Stops all currently running AI agent containers managed by Cocina.
+- `start_agent[agent_name]` : Start specific agent.
+- `stop_agent[agent_name]` : Stop specific agent.
 - `monitor` : Displays the current running status (container ID, status, name) of all configured agents.
 - `restart` : Stops all agents and then starts them again.
 - `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
