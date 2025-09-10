@@ -17,6 +17,9 @@ class DockerAgentOrchestrator
       @agents = [
         {
           name: "chef_agent",
+          description: "Primary agent utilizing ChatGPT or Gemini or etc etc etc", #describe the agent for inventory purposes / audit
+          build: "prod", #define if agent is prod or test or something else
+          externals: "none", # list if any RAG resources are involved with agent
           image: "my_ai_agent_chef:latest", # Replace with your actual agent image
           command: "python /app/chef_agent.py", # Command to run inside the container
           env: { "API_KEY" => "some_key_alpha", "AGENT_ID" => "chef_001" },
@@ -24,6 +27,9 @@ class DockerAgentOrchestrator
         },
         {
           name: "sous_agent",
+          description: "Agent to help primary.", #describe the agent for inventory purposes / audit
+          build: "prod", #define if agent is prod or test or something else
+          externals: "none", # list if any RAG resources are involved with agent
           image: "my_ai_agent_sous:latest", # Replace with your actual agent image
           command: "python /app/sous_agent.py",
           env: { "API_KEY" => "some_key_beta", "AGENT_ID" => "sous_001" },
@@ -159,6 +165,24 @@ class DockerAgentOrchestrator
     puts "--- Cleanup Complete ---"
   end
 
+  def list_agents
+    puts "\n--- AI Agent Inventory ---"
+    if @agents.empty?
+      puts "No agents are registered."
+    else
+      puts "Total Agents: #{@agents.count}"
+      @agents.each_with_index do |agent, index|
+        puts "##{index + 1}:"
+        puts "  Name: #{agent[:name]}"
+        puts "  Description: #{agent[:description] || 'No description provided.'}"
+        puts "  Image: #{agent[:image] || 'N/A'}"
+        puts "  Build: #{agent[:build] || 'N/A'}"
+        puts "  Externals: #{agent[:externals] || 'N/A'}"
+      end
+    end
+    puts "--- Inventory Complete ---"
+  end
+
   # Main orchestration method
   def orchestrate(action)
     case action
@@ -182,6 +206,8 @@ class DockerAgentOrchestrator
       build_images
       start_agents
       monitor_agents
+    when :inventory
+      list_agents
     else
       puts "Unknown action: #{action}. Use :start, :stop, :monitor, :restart, :cleanup, or :full_cycle."
     end
@@ -206,13 +232,16 @@ if __FILE__ == $0
     orchestrator.orchestrate(:cleanup)
   when "full_cycle"
     orchestrator.orchestrate(:full_cycle)
+  when "inventory"
+    orchestrator.orchestrate(:inventory)
   else
-    puts "Usage: ruby cocina.rb [start|stop|monitor|restart|cleanup|full_cycle]"
-    puts "\nExample: ruby cocina.rb start"
+    puts "Usage: ruby agents_orchestrator.rb [start|stop|monitor|restart|cleanup|full_cycle|inventory]"
+    puts "\nExample: ruby agents_orchestrator.rb start"
     puts "  To start all defined AI agent containers."
-    puts "\nExample: ruby cocina.rb stop"
+    puts "\nExample: ruby agents_orchestrator.rb stop"
     puts "  To stop all running AI agent containers."
-    puts "\nExample: cocina.rb full_cycle"
+    puts "\nExample: ruby agents_orchestrator.rb full_cycle"
     puts "  To stop, clean up, build (if needed), and then start all agents."
   end
 end
+
