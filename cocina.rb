@@ -111,6 +111,31 @@ class DockerAgentOrchestrator
     puts "--- AI Agents Started ---"
   end
 
+  def start_agent(agent_name)
+    puts "\n--- Starting AI Agent: #{agent_name} ---"
+
+    agent = @agents.find { |a| a[:name] == agent_name }
+
+    if agent
+      env_vars = agent[:env].map { |k, v| "-e #{k}=\"#{v}\"" }.join(" ")
+      ports = agent[:ports].map { |p| "-p #{p}" }.join(" ")
+      command = "docker run -d --rm --name #{agent[:name]} #{env_vars} #{ports} #{agent[:image]} #{agent[:command]}"
+
+      puts "Starting container for #{agent[:name]}..."
+      stdout, stderr, success = run_command(command)
+
+      if success
+        puts "Started #{agent[:name]} (Container ID: #{stdout})"
+      else
+        puts "Failed to start #{agent[:name]}."
+      end
+    else
+      puts "Error: Agent '#{agent_name}' not found in the configuration."
+    end
+
+    puts "--- AI Agent Started ---"
+  end
+
   # Monitor the status of the running agents
   def monitor_agents
     puts "\n--- Monitoring AI Agents ---"
@@ -145,6 +170,25 @@ class DockerAgentOrchestrator
       end
     end
     puts "--- AI Agents Stopped ---"
+  end
+
+  def stop_agent(agent_name)
+    puts "\n--- Stopping AI Agent: #{agent_name} ---"
+
+    # Construct the docker stop command using the agent's name
+    command = "docker stop #{agent_name}"
+
+    puts "Stopping container for #{agent_name}..."
+    stdout, stderr, success = run_command(command)
+
+    if success
+      puts "Stopped #{agent_name}."
+    else
+      puts "Failed to stop #{agent_name}. It might not be running."
+      puts "Error: #{stderr}" unless stderr.empty?
+    end
+
+    puts "--- AI Agent Stopped ---"
   end
 
   # Clean up (remove stopped containers)
@@ -184,7 +228,7 @@ class DockerAgentOrchestrator
   end
 
   # Main orchestration method
-  def orchestrate(action)
+  def orchestrate(action, agent_name = nil)
     case action
     when :start
       build_images # Optional: build images before starting
@@ -192,6 +236,10 @@ class DockerAgentOrchestrator
       monitor_agents
     when :stop
       stop_agents
+    when :stop_agent
+      stop_agent(agent_name)
+    when :start_agent
+      start_agent(agent_name)
     when :monitor
       monitor_agents
     when :restart
@@ -209,7 +257,7 @@ class DockerAgentOrchestrator
     when :inventory
       list_agents
     else
-      puts "Unknown action: #{action}. Use :start, :stop, :monitor, :restart, :cleanup, or :full_cycle."
+      puts "Unknown action: #{action}. Use :start, :start_agent, :stop, :stop_agent, :monitor, :restart, :cleanup, :inventory or :full_cycle."
     end
   end
 end
@@ -224,6 +272,22 @@ if __FILE__ == $0
     orchestrator.orchestrate(:start)
   when "stop"
     orchestrator.orchestrate(:stop)
+  when "stop_agent"
+    if ARGV[1].nil?
+      puts "Error: Please provide the name of the agent to stop."
+      puts "Usage: ruby cocina.rb stop_agent [agent_name]"
+    else
+      agent_name = ARGV[1]
+      orchestrator.orchestrate(:stop_agent, agent_name)
+    end
+  when "start_agent" 
+    if ARGV[1].nil?
+      puts "Error: Please provide the name of the agent to start."
+      puts "Usage: ruby cocina.rb start_agent [agent_name]"
+    else
+      agent_name = ARGV[1]
+      orchestrator.orchestrate(:start_agent, agent_name) 
+    end
   when "monitor"
     orchestrator.orchestrate(:monitor)
   when "restart"
@@ -235,7 +299,7 @@ if __FILE__ == $0
   when "inventory"
     orchestrator.orchestrate(:inventory)
   else
-    puts "Usage: ruby agents_orchestrator.rb [start|stop|monitor|restart|cleanup|full_cycle|inventory]"
+    puts "Usage: ruby agents_orchestrator.rb [start|start_agent[agent_name]|stop|stop_agent[agent_name]|monitor|restart|cleanup|full_cycle|inventory]"
     puts "\nExample: ruby agents_orchestrator.rb start"
     puts "  To start all defined AI agent containers."
     puts "\nExample: ruby agents_orchestrator.rb stop"
