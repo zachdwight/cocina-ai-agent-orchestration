@@ -13,6 +13,7 @@
     * **Restart:** Stops and then restarts all agents.
     * **Cleanup:** Removes stopped agent containers.
     * **Full Cycle:** Performs a stop, cleanup, build, and then start operation.
+    * **Inventory:** List out all agents (w/ details) that are registered.
 * **Error Handling:** Provides basic error reporting for Docker commands and configuration parsing.
 
 ## Prerequisites
@@ -60,26 +61,32 @@ The script comes with a default set of agents defined within the `DockerAgentOrc
 
 ```ruby
 @agents = [
-  {
-    name: "chef_agent",
-    image: "my_ai_agent_chef:latest",
-    command: "python /app/chef_agent.py",
-    env: { "API_KEY" => "some_key_alpha", "AGENT_ID" => "chef_001" },
-    ports: ["8000:8000"]
-  },
-  {
-    name: "sous_agent",
-    image: "my_ai_agent_sous:latest",
-    command: "python /app/sous_agent.py",
-    env: { "API_KEY" => "some_key_beta", "AGENT_ID" => "sous_001" },
-    ports: []
-  }
-]
+        {
+          name: "chef_agent",
+          description: "Primary agent utilizing ChatGPT or Gemini or etc etc etc", #describe the agent for inventory purposes / audit
+          build: "prod", #define if agent is prod or test or something else
+          externals: "none", # list if any RAG resources are involved with agent
+          image: "my_ai_agent_chef:latest", # Replace with your actual agent image
+          command: "python /app/chef_agent.py", # Command to run inside the container
+          env: { "API_KEY" => "some_key_alpha", "AGENT_ID" => "chef_001" },
+          ports: ["8000:8000"] # Example: exposing port 8000
+        },
+        {
+          name: "sous_agent",
+          description: "Agent to help primary.", #describe the agent for inventory purposes / audit
+          build: "prod", #define if agent is prod or test or something else
+          externals: "none", # list if any RAG resources are involved with agent
+          image: "my_ai_agent_sous:latest", # Replace with your actual agent image
+          command: "python /app/sous_agent.py",
+          env: { "API_KEY" => "some_key_beta", "AGENT_ID" => "sous_001" },
+          ports: [] # No ports exposed for this agent
+        }
+      ]
 ```
 
 Optional: External JSON Configuration (Recommended for Production)
 
-For more flexible management, you can define your agents in a separate JSON file (e.g., `agents_config.json`):
+For more flexible management, you can define your agents in a separate JSON file (e.g., `agents_config.json`) and pare details you don't need:
 ```json
 [
   {
@@ -129,7 +136,7 @@ Available Actions:
 - `restart` : Stops all agents and then starts them again.
 - `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
 - `full_cycle` : Executes a complete lifecycle: stops, cleans up, builds (if needed), and then starts all agents. This is useful for a fresh deployment.
-
+- `inventory` : Lists out all registered agents and additional details.
 ---
 
 ## Example 
@@ -168,4 +175,26 @@ Agent: chef_agent is not running.
 Agent: sous_agent is not running.
 No AI agents are currently running.
 --- Monitoring Complete ---
+```
+
+List out the inventory of agents to confirm details...
+
+``` bash
+me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb inventory
+
+--- AI Agent Inventory ---
+Total Agents : 2
+#1:
+  Name: chef_agent
+  Description: Primary agent utilizing ChatGPT or Gemini or etc etc etc
+  Image: my_ai_agent_chef:latest
+  Build: prod
+  Externals: none
+#2:
+  Name: sous_agent
+  Description: Agent to help primary.
+  Image: my_ai_agent_sous:latest
+  Build: prod
+  Externals: none
+--- Inventory Complete ---
 ```
