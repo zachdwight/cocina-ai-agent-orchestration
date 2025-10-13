@@ -157,6 +157,38 @@ class DockerAgentOrchestrator
     puts "--- Monitoring Complete ---"
   end
 
+  def agent_logs(agent_name, follow = false, tail = nil)
+    puts "\n--- Displaying Logs for AI Agent: #{agent_name} ---"
+
+    unless @agents.any? { |a| a[:name] == agent_name }
+      puts "Error: Agent '#{agent_name}' not found in the configuration."
+      puts "--- Logs Display Complete ---"
+      return
+    end
+
+    command = "docker logs #{agent_name}"
+  
+    command += " -f" if follow
+
+    command += " --tail #{tail}" if tail
+
+    puts "Executing: #{command}"
+
+    if follow
+      system(command)
+    else
+      stdout, stderr, success = run_command(command)
+      if success
+        puts stdout
+      else
+        puts "Failed to retrieve logs for #{agent_name}. Container might not be running or an error occurred."
+        puts "Error: #{stderr}" unless stderr.empty?
+      end
+    end
+
+    puts "--- Logs Display Complete ---"
+  end
+
   # Stop all running agent containers
   def stop_agents
     puts "\n--- Stopping AI Agents ---"
@@ -227,8 +259,37 @@ class DockerAgentOrchestrator
     puts "--- Inventory Complete ---"
   end
 
+  def resource_usage
+    puts "\n--- AI Agent Resource Usage (docker stats) ---"
+
+    running_agent_names = []
+    @agents.each do |agent|
+
+      stdout, _, success = run_command("docker ps -f name=^/#{agent[:name]}$ --format '{{.Names}}'")
+      running_agent_names << stdout.strip unless stdout.empty?
+    end
+
+    if running_agent_names.empty?
+      puts "No AI agents are currently running to report statistics for."
+      puts "--- Resource Usage Complete ---"
+      return
+    end
+
+    stats_command = "docker stats --no-stream --format \"table {{.ID}}\\t{{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}\" #{running_agent_names.join(' ')}"
+   
+    stdout, _, success = run_command(stats_command)
+
+    if success
+      puts stdout
+    else
+      puts "Failed to retrieve resource usage statistics. Check if Docker daemon running."
+    end
+
+    puts "--- Resource Usage Complete ---"
+  end
+
   # Main orchestration method
-  def orchestrate(action, agent_name = nil)
+  def orchestrate(action, agent_name = nil, options = {})
     case action
     when :start
       build_images # Optional: build images before starting
@@ -256,8 +317,12 @@ class DockerAgentOrchestrator
       monitor_agents
     when :inventory
       list_agents
+    when :resource_usage
+      resource_usage
+    when :logs 
+      agent_logs(agent_name, options[:follow], options[:tail])
     else
-      puts "Unknown action: #{action}. Use :start, :start_agent, :stop, :stop_agent, :monitor, :restart, :cleanup, :inventory or :full_cycle."
+      puts "Unknown action: #{action}. Use :start, :start_agent, :stop, :stop_agent, :monitor, :restart, :cleanup, :inventory, :resource_usage or :full_cycle."
     end
   end
 end
@@ -298,14 +363,37 @@ if __FILE__ == $0
     orchestrator.orchestrate(:full_cycle)
   when "inventory"
     orchestrator.orchestrate(:inventory)
+  when "resource_usage" 
+    orchestrator.orchestrate(:resource_usage)
+  when "logs" 
+    if ARGV[1].nil?
+      puts "Error: Please provide the name of the agent to view logs for."
+      puts "Usage: ruby cocina.rb logs [agent_name] [--follow] [--tail N]"
+    else
+      agent_name = ARGV[1]
+      options = {}
+
+      options[:follow] = ARGV.include?("--follow")
+      
+      tail_index = ARGV.index("--tail")
+      if tail_index && ARGV[tail_index + 1]
+        options[:tail] = ARGV[tail_index + 1].to_i
+      end
+      
+      orchestrator.orchestrate(:logs, agent_name, options)
+    end
   else
-    puts "Usage: ruby agents_orchestrator.rb [start|start_agent[agent_name]|stop|stop_agent[agent_name]|monitor|restart|cleanup|full_cycle|inventory]"
+    puts "Usage: ruby agents_orchestrator.rb [start|start_agent[agent_name]|stop|stop_agent[agent_name]|monitor|restart|cleanup|full_cycle|inventory|resource_usage|logs[agent]]"
     puts "\nExample: ruby agents_orchestrator.rb start"
     puts "  To start all defined AI agent containers."
     puts "\nExample: ruby agents_orchestrator.rb stop"
     puts "  To stop all running AI agent containers."
     puts "\nExample: ruby agents_orchestrator.rb full_cycle"
     puts "  To stop, clean up, build (if needed), and then start all agents."
+    puts "\nExample: ruby agents_orchestrator.rb resource_usage"
+    puts "  To display real-time CPU/Memory usage for running agents."
+    puts "\nExample: ruby agents_orchestrator.rb logs chef_agent --follow"
+    puts "  To stream logs for the 'chef_agent' container."
   end
 end
 
