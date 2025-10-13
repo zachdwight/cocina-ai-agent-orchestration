@@ -206,3 +206,16 @@ Total Agents : 2
   Externals: none
 --- Inventory Complete ---
 ```
+
+Interact with specific agents by name...
+
+``` bash
+me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb stop_agent 'sous_agent'
+
+--- Stopping AI Agent: sous_agent ---
+Stopping container for sous_agent...
+Stopped sous_agent.
+--- AI Agent Stopped ---
+```
+
+
