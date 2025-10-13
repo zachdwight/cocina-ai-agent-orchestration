@@ -16,6 +16,8 @@
     * **Cleanup:** Removes stopped agent containers.
     * **Full Cycle:** Performs a stop, cleanup, build, and then start operation.
     * **Inventory:** List out all agents (w/ details) that are registered.
+    * **Resource Usage:** Display real-time CPU/Memory usage for running agents.
+    * **Logs:** Stream logs for specific agent.
 * **Error Handling:** Provides basic error reporting for Docker commands and configuration parsing.
 
 ## Prerequisites
@@ -141,6 +143,8 @@ Available Actions:
 - `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
 - `full_cycle` : Executes a complete lifecycle: stops, cleans up, builds (if needed), and then starts all agents. This is useful for a fresh deployment.
 - `inventory` : Lists out all registered agents and additional details.
+- `resource_usage` : Lists out all resource usage via `docker stats` command.
+- `logs[agent_name]` : Displays logs for a specific agent via `docker logs` command.
 ---
 
 ## Example 
