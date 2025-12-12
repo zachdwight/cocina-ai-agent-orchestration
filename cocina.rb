@@ -2,51 +2,85 @@
 
 require 'json' # For potential future configuration loading
 require 'open3' # To execute shell commands and capture output/errors
+require 'shellwords'
 
 #keep in mind you could pre-build your agents in any location and adjust accordingly
 #docker build -t my_ai_agent_chef:latest ./my_ai_agent_chef
 #docker build -t my_ai_agent_sous:latest ./my_ai_agent_sous
+class Agent
+  attr_reader :name, :description, :image, :command, :env, :ports, :build, :externals
+
+  def initialize(h)
+    @name        = h[:name]
+    @description = h[:description]
+    @image       = h[:image]
+    @command     = h[:command]
+    @env         = h[:env] || {}
+    @ports       = h[:ports] || []
+    @build       = h[:build]
+    @externals   = h[:externals]
+  end
+
+  def env_flags
+    env.flat_map { |k,v| ["-e", "#{k}=#{v}"] }
+  end
+
+  def port_flags
+    ports.flat_map { |p| ["-p", p] }
+  end
+end
+
 
 class DockerAgentOrchestrator
   def initialize(config_file = nil)
     @agents = []
+
     if config_file
       load_config(config_file)
     else
-      # Default example agents if no config file is provided
-      @agents = [
+      default_agents = [
         {
           name: "chef_agent",
-          description: "Primary agent utilizing ChatGPT or Gemini or etc etc etc", #describe the agent for inventory purposes / audit
-          build: "prod", #define if agent is prod or test or something else
-          externals: "none", # list if any RAG resources are involved with agent
-          image: "my_ai_agent_chef:latest", # Replace with your actual agent image
-          command: "python /app/chef_agent.py", # Command to run inside the container
+          description: "Primary agent utilizing ChatGPT or Gemini or etc etc etc",
+          build: "prod",
+          externals: "none",
+          image: "my_ai_agent_chef:latest",
+          command: "python /app/chef_agent.py",
           env: { "API_KEY" => "some_key_alpha", "AGENT_ID" => "chef_001" },
-          ports: ["8000:8000"] # Example: exposing port 8000
+          ports: ["8000:8000"]
         },
         {
           name: "sous_agent",
-          description: "Agent to help primary.", #describe the agent for inventory purposes / audit
-          build: "prod", #define if agent is prod or test or something else
-          externals: "none", # list if any RAG resources are involved with agent
-          image: "my_ai_agent_sous:latest", # Replace with your actual agent image
+          description: "Agent to help primary",
+          build: "prod",
+          externals: "none",
+          image: "my_ai_agent_sous:latest",
           command: "python /app/sous_agent.py",
           env: { "API_KEY" => "some_key_beta", "AGENT_ID" => "sous_001" },
-          ports: [] # No ports exposed for this agent
+          ports: []
         }
       ]
+
+      @agents = default_agents.map { |a| Agent.new(a) }
     end
   end
 
-  # Load agent configurations from a JSON file
+  #
+  # Quick Win #2: compose auto-detection
+  #
+  def use_compose?
+    File.exist?("docker-compose.yml") || File.exist?("compose.yaml")
+  end
+
   def load_config(file_path)
     unless File.exist?(file_path)
       puts "Error: Configuration file '#{file_path}' not found."
       exit 1
     end
+
     begin
-      @agents = JSON.parse(File.read(file_path), symbolize_names: true)
+      raw = JSON.parse(File.read(file_path), symbolize_names: true)
+      @agents = raw.map { |agent| Agent.new(agent) }
       puts "Loaded agent configurations from #{file_path}"
     rescue JSON::ParserError => e
       puts "Error parsing configuration file: #{e.message}"
@@ -54,346 +88,302 @@ class DockerAgentOrchestrator
     end
   end
 
-  # Run a shell command and capture its output and status
-  def run_command(command)
-    stdout, stderr, status = Open3.capture3(command)
+  #
+  # Quick Win #3 — Command wrapper with nicer output
+  #
+  def run_command(cmd_array)
+    stdout, stderr, status = Open3.capture3(*cmd_array)
     unless status.success?
-      puts "Command failed: #{command}"
+      puts "Command failed: #{cmd_array.shelljoin}"
       puts "STDOUT: #{stdout}" unless stdout.empty?
       puts "STDERR: #{stderr}" unless stderr.empty?
     end
+
     [stdout.strip, stderr.strip, status.success?]
   end
 
-  # Build Docker images (if specified in config or needed)
-  # This is a placeholder; you might have a more sophisticated build process
+  #
+  # Quick Win #4: docker healthcheck wait
+  #
+def wait_for_healthy(agent, timeout: 25)
+  start_time = Time.now
+
+  loop do
+    # First: check whether container even HAS a Health section
+    inspect_cmd = ["docker", "inspect", "--format={{json .State.Health}}", agent.name]
+    stdout, _, _ = run_command(inspect_cmd)
+
+    # If Health is null or empty → no healthcheck → skip waiting
+    if stdout.nil? || stdout.empty? || stdout == "null"
+      puts "No HEALTHCHECK defined for #{agent.name}; skipping health wait."
+      return true
+    end
+
+    # If Health exists, then check the status
+    inspect_cmd = ["docker", "inspect", "--format={{.State.Health.Status}}", agent.name]
+    health_status, _, _ = run_command(inspect_cmd)
+
+    return true if health_status == "healthy"
+
+    break if Time.now - start_time > timeout
+    sleep 1
+  end
+
+  false
+end
+
+  #
+  # Build images (unchanged, except using new Agent class)
+  #
   def build_images
     puts "\n--- Building Docker Images ---"
-    @agents.each do |agent|
-      # Assuming you have a Dockerfile in a directory named after the agent's image name (without tag)
-      image_name_without_tag = agent[:image].split(':').first
-      dockerfile_path = "./#{image_name_without_tag}" # Adjust as per your project structure
 
-      if File.exist?(dockerfile_path) && File.directory?(dockerfile_path)
-        puts "Attempting to build image: #{agent[:image]} from #{dockerfile_path}"
-        command = "docker build -t #{agent[:image]} #{dockerfile_path}"
-        _, _, success = run_command(command)
-        if success
-          puts "Successfully built image: #{agent[:image]}"
-        else
-          puts "Failed to build image: #{agent[:image]}. Please check your Dockerfile and context."
-        end
+    @agents.each do |agent|
+      image_name_without_tag = agent.image.split(':').first
+      dockerfile_path = "./#{image_name_without_tag}"
+
+      if File.directory?(dockerfile_path)
+        puts "Attempting to build image: #{agent.image}"
+
+        cmd = ["docker", "build", "-t", agent.image, dockerfile_path]
+        _, _, success = run_command(cmd)
+
+        puts(success ? "Successfully built #{agent.image}" : "Failed to build #{agent.image}")
       else
-        puts "Skipping build for #{agent[:image]}. No Dockerfile context found at #{dockerfile_path}"
+        puts "Skipping #{agent.image}; no Dockerfile context exists."
       end
     end
+
     puts "--- Image Building Complete ---"
   end
 
-
-  # Start all defined Docker containers for the agents
+  #
+  # Start all agents
+  #
   def start_agents
-    puts "\n--- Starting AI Agents ---"
-    @agents.each do |agent|
-      env_vars = agent[:env].map { |k, v| "-e #{k}=\"#{v}\"" }.join(" ")
-      ports = agent[:ports].map { |p| "-p #{p}" }.join(" ")
-      command = "docker run -d --rm --name #{agent[:name]} #{env_vars} #{ports} #{agent[:image]} #{agent[:command]}"
-
-      puts "Starting container for #{agent[:name]}..."
-      stdout, stderr, success = run_command(command)
-
-      if success
-        puts "Started #{agent[:name]} (Container ID: #{stdout})"
-      else
-        puts "Failed to start #{agent[:name]}."
-      end
-    end
-    puts "--- AI Agents Started ---"
-  end
-
-  def start_agent(agent_name)
-    puts "\n--- Starting AI Agent: #{agent_name} ---"
-
-    agent = @agents.find { |a| a[:name] == agent_name }
-
-    if agent
-      env_vars = agent[:env].map { |k, v| "-e #{k}=\"#{v}\"" }.join(" ")
-      ports = agent[:ports].map { |p| "-p #{p}" }.join(" ")
-      command = "docker run -d --rm --name #{agent[:name]} #{env_vars} #{ports} #{agent[:image]} #{agent[:command]}"
-
-      puts "Starting container for #{agent[:name]}..."
-      stdout, stderr, success = run_command(command)
-
-      if success
-        puts "Started #{agent[:name]} (Container ID: #{stdout})"
-      else
-        puts "Failed to start #{agent[:name]}."
-      end
-    else
-      puts "Error: Agent '#{agent_name}' not found in the configuration."
-    end
-
-    puts "--- AI Agent Started ---"
-  end
-
-  # Monitor the status of the running agents
-  def monitor_agents
-    puts "\n--- Monitoring AI Agents ---"
-    running_agents = []
-    @agents.each do |agent|
-      stdout, _, success = run_command("docker ps -f name=^/#{agent[:name]}$ --format '{{.ID}}\t{{.Status}}\t{{.Names}}'")
-      if success && !stdout.empty?
-        id, status, name = stdout.split("\t")
-        puts "Agent: #{name}, Status: #{status}, ID: #{id}"
-        running_agents << agent[:name]
-      else
-        puts "Agent: #{agent[:name]} is not running."
-      end
-    end
-
-    if running_agents.empty?
-      puts "No AI agents are currently running."
-    end
-    puts "--- Monitoring Complete ---"
-  end
-
-  def agent_logs(agent_name, follow = false, tail = nil)
-    puts "\n--- Displaying Logs for AI Agent: #{agent_name} ---"
-
-    unless @agents.any? { |a| a[:name] == agent_name }
-      puts "Error: Agent '#{agent_name}' not found in the configuration."
-      puts "--- Logs Display Complete ---"
+    if use_compose?
+      puts "\n--- Starting via docker compose ---"
+      system("docker compose up -d")
       return
     end
 
-    command = "docker logs #{agent_name}"
-  
-    command += " -f" if follow
+    puts "\n--- Starting AI Agents ---"
+    @agents.each { |agent| start_single(agent) }
+    puts "--- AI Agents Started ---"
+  end
 
-    command += " --tail #{tail}" if tail
+  #
+  # Helper for starting a single agent (used by both start & start_agent)
+  #
+  def start_single(agent)
+    args = [
+      "docker", "run", "-d", "--rm",
+      "--name", agent.name,
+      *agent.env_flags,
+      *agent.port_flags,
+      agent.image,
+      *Shellwords.split(agent.command)
+    ]
 
-    puts "Executing: #{command}"
+    puts "Starting container for #{agent.name}..."
+    stdout, _, success = run_command(args)
+
+    if success
+      puts "Started #{agent.name} (Container ID: #{stdout})"
+      wait_for_healthy(agent)
+    else
+      puts "Failed to start #{agent.name}."
+    end
+  end
+
+  def start_agent(name)
+    agent = @agents.find { |a| a.name == name }
+    return puts "Agent '#{name}' not found." unless agent
+
+    puts "\n--- Starting AI Agent: #{name} ---"
+    start_single(agent)
+    puts "--- AI Agent Started ---"
+  end
+
+  #
+  # Monitor
+  #
+  def monitor_agents
+    puts "\n--- Monitoring AI Agents ---"
+
+    @agents.each do |agent|
+      cmd = [
+        "docker", "ps",
+        "-f", "name=^/#{agent.name}$",
+        "--format", "{{.ID}}\t{{.Status}}\t{{.Names}}"
+      ]
+
+      stdout, _, _ = run_command(cmd)
+
+      if stdout.empty?
+        puts "Agent: #{agent.name} is not running."
+      else
+        id, status, name = stdout.split("\t")
+        puts "Agent: #{name}, Status: #{status}, ID: #{id}"
+      end
+    end
+
+    puts "--- Monitoring Complete ---"
+  end
+
+  #
+  # Logs
+  #
+  def agent_logs(name, follow=false, tail=nil)
+    puts "\n--- Displaying Logs for AI Agent: #{name} ---"
+
+    args = ["docker", "logs", name]
+    args << "-f" if follow
+    args += ["--tail", tail.to_s] if tail
 
     if follow
-      system(command)
+      exec(*args)
     else
-      stdout, stderr, success = run_command(command)
-      if success
-        puts stdout
-      else
-        puts "Failed to retrieve logs for #{agent_name}. Container might not be running or an error occurred."
-        puts "Error: #{stderr}" unless stderr.empty?
-      end
+      stdout, stderr, success = run_command(args)
+      puts(success ? stdout : "Error: #{stderr}")
     end
 
     puts "--- Logs Display Complete ---"
   end
 
-  # Stop all running agent containers
+  #
+  # Stop agents
+  #
   def stop_agents
     puts "\n--- Stopping AI Agents ---"
-    @agents.each do |agent|
-      puts "Stopping container for #{agent[:name]}..."
-      stdout, stderr, success = run_command("docker stop #{agent[:name]}")
-      if success
-        puts "Stopped #{agent[:name]}."
-      else
-        puts "Failed to stop #{agent[:name]} (might not be running or an error occurred)."
-      end
-    end
-    puts "--- AI Agents Stopped ---"
-  end
-
-  def stop_agent(agent_name)
-    puts "\n--- Stopping AI Agent: #{agent_name} ---"
-
-    # Construct the docker stop command using the agent's name
-    command = "docker stop #{agent_name}"
-
-    puts "Stopping container for #{agent_name}..."
-    stdout, stderr, success = run_command(command)
-
-    if success
-      puts "Stopped #{agent_name}."
-    else
-      puts "Failed to stop #{agent_name}. It might not be running."
-      puts "Error: #{stderr}" unless stderr.empty?
-    end
-
-    puts "--- AI Agent Stopped ---"
-  end
-
-  # Clean up (remove stopped containers)
-  def cleanup_containers
-    puts "\n--- Cleaning Up Docker Containers ---"
-    @agents.each do |agent|
-      puts "Removing container for #{agent[:name]} (if it exists)..."
-      # The --rm flag in 'docker run' usually handles this, but this is a failsafe
-      stdout, stderr, success = run_command("docker rm #{agent[:name]}")
-      if success
-        puts "Removed #{agent[:name]}."
-      elsif stderr.include?("No such container")
-        puts "Container #{agent[:name]} does not exist, no need to remove."
-      else
-        puts "Failed to remove #{agent[:name]}: #{stderr}"
-      end
-    end
-    puts "--- Cleanup Complete ---"
-  end
-
-  def list_agents
-    puts "\n--- AI Agent Inventory ---"
-    if @agents.empty?
-      puts "No agents are registered."
-    else
-      puts "Total Agents: #{@agents.count}"
-      @agents.each_with_index do |agent, index|
-        puts "##{index + 1}:"
-        puts "  Name: #{agent[:name]}"
-        puts "  Description: #{agent[:description] || 'No description provided.'}"
-        puts "  Image: #{agent[:image] || 'N/A'}"
-        puts "  Build: #{agent[:build] || 'N/A'}"
-        puts "  Externals: #{agent[:externals] || 'N/A'}"
-      end
-    end
-    puts "--- Inventory Complete ---"
-  end
-
-  def resource_usage
-    puts "\n--- AI Agent Resource Usage (docker stats) ---"
-
-    running_agent_names = []
-    @agents.each do |agent|
-
-      stdout, _, success = run_command("docker ps -f name=^/#{agent[:name]}$ --format '{{.Names}}'")
-      running_agent_names << stdout.strip unless stdout.empty?
-    end
-
-    if running_agent_names.empty?
-      puts "No AI agents are currently running to report statistics for."
-      puts "--- Resource Usage Complete ---"
+    if use_compose?
+      system("docker compose down")
       return
     end
 
-    stats_command = "docker stats --no-stream --format \"table {{.ID}}\\t{{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.NetIO}}\" #{running_agent_names.join(' ')}"
-   
-    stdout, _, success = run_command(stats_command)
-
-    if success
-      puts stdout
-    else
-      puts "Failed to retrieve resource usage statistics. Check if Docker daemon running."
+    @agents.each do |agent|
+      run_command(["docker", "stop", agent.name])
+      puts "Stopped #{agent.name}."
     end
 
-    puts "--- Resource Usage Complete ---"
+    puts "--- AI Agents Stopped ---"
   end
 
-  # Main orchestration method
-  def orchestrate(action, agent_name = nil, options = {})
+  def stop_agent(name)
+    puts "\n--- Stopping AI Agent: #{name} ---"
+    run_command(["docker", "stop", name])
+    puts "--- AI Agent Stopped ---"
+  end
+
+  def cleanup_containers
+    puts "\n--- Cleaning Up Docker Containers ---"
+
+    @agents.each do |agent|
+      stdout, stderr, _ = run_command(["docker", "rm", agent.name])
+      if stderr.include?("No such container")
+        puts "Container #{agent.name} does not exist."
+      else
+        puts "Removed #{agent.name}"
+      end
+    end
+
+    puts "--- Cleanup Complete ---"
+  end
+
+  #
+  # Inventory
+  #
+  def list_agents
+    puts "\n--- AI Agent Inventory ---"
+
+    @agents.each_with_index do |agent, i|
+      puts "##{i+1}"
+      puts "  Name: #{agent.name}"
+      puts "  Description: #{agent.description}"
+      puts "  Image: #{agent.image}"
+      puts "  Build: #{agent.build}"
+      puts "  Externals: #{agent.externals}"
+    end
+
+    puts "--- Inventory Complete ---"
+  end
+
+  #
+  # Resource usage
+  #
+  def resource_usage
+    puts "\n--- AI Agent Resource Usage ---"
+
+    running = @agents.map(&:name)
+    args = [
+      "docker", "stats", "--no-stream",
+      "--format", "table {{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}",
+      *running
+    ]
+
+    stdout, _, success = run_command(args)
+    puts stdout if success
+  end
+
+  #
+  # Orchestration entrypoint
+  #
+  def orchestrate(action, agent_name=nil, options={})
     case action
-    when :start
-      build_images # Optional: build images before starting
-      start_agents
-      monitor_agents
-    when :stop
-      stop_agents
-    when :stop_agent
-      stop_agent(agent_name)
-    when :start_agent
-      start_agent(agent_name)
-    when :monitor
-      monitor_agents
-    when :restart
-      stop_agents
-      start_agents
-      monitor_agents
-    when :cleanup
-      cleanup_containers
-    when :full_cycle
-      stop_agents
-      cleanup_containers
-      build_images
-      start_agents
-      monitor_agents
-    when :inventory
-      list_agents
-    when :resource_usage
-      resource_usage
-    when :logs 
-      agent_logs(agent_name, options[:follow], options[:tail])
+    when :start       then build_images; start_agents; monitor_agents
+    when :stop        then stop_agents
+    when :stop_agent  then stop_agent(agent_name)
+    when :start_agent then start_agent(agent_name)
+    when :monitor     then monitor_agents
+    when :restart     then stop_agents; start_agents; monitor_agents
+    when :cleanup     then cleanup_containers
+    when :full_cycle  then stop_agents; cleanup_containers; build_images; start_agents; monitor_agents
+    when :inventory   then list_agents
+    when :resource_usage then resource_usage
+    when :logs        then agent_logs(agent_name, options[:follow], options[:tail])
     else
-      puts "Unknown action: #{action}. Use :start, :start_agent, :stop, :stop_agent, :monitor, :restart, :cleanup, :inventory, :resource_usage or :full_cycle."
+      puts "Unknown action: #{action}"
     end
   end
 end
 
-# --- Script Execution ---
 
+#
+# CLI Part – unchanged except for formatting
+#
 if __FILE__ == $0
-  orchestrator = DockerAgentOrchestrator.new # Or pass a config file: DockerAgentOrchestrator.new("agents_config.json")
+  orchestrator = DockerAgentOrchestrator.new
 
   case ARGV[0]
-  when "start"
-    orchestrator.orchestrate(:start)
-  when "stop"
-    orchestrator.orchestrate(:stop)
-  when "stop_agent"
-    if ARGV[1].nil?
-      puts "Error: Please provide the name of the agent to stop."
-      puts "Usage: ruby cocina.rb stop_agent [agent_name]"
-    else
-      agent_name = ARGV[1]
-      orchestrator.orchestrate(:stop_agent, agent_name)
-    end
-  when "start_agent" 
-    if ARGV[1].nil?
-      puts "Error: Please provide the name of the agent to start."
-      puts "Usage: ruby cocina.rb start_agent [agent_name]"
-    else
-      agent_name = ARGV[1]
-      orchestrator.orchestrate(:start_agent, agent_name) 
-    end
-  when "monitor"
-    orchestrator.orchestrate(:monitor)
-  when "restart"
-    orchestrator.orchestrate(:restart)
-  when "cleanup"
-    orchestrator.orchestrate(:cleanup)
-  when "full_cycle"
-    orchestrator.orchestrate(:full_cycle)
-  when "inventory"
-    orchestrator.orchestrate(:inventory)
-  when "resource_usage" 
-    orchestrator.orchestrate(:resource_usage)
-  when "logs" 
-    if ARGV[1].nil?
-      puts "Error: Please provide the name of the agent to view logs for."
-      puts "Usage: ruby cocina.rb logs [agent_name] [--follow] [--tail N]"
-    else
-      agent_name = ARGV[1]
-      options = {}
+  when "start" then orchestrator.orchestrate(:start)
+  when "stop"  then orchestrator.orchestrate(:stop)
 
-      options[:follow] = ARGV.include?("--follow")
-      
-      tail_index = ARGV.index("--tail")
-      if tail_index && ARGV[tail_index + 1]
-        options[:tail] = ARGV[tail_index + 1].to_i
-      end
-      
-      orchestrator.orchestrate(:logs, agent_name, options)
+  when "start_agent"
+    name = ARGV[1] or abort("Usage: start_agent [name]")
+    orchestrator.orchestrate(:start_agent, name)
+
+  when "stop_agent"
+    name = ARGV[1] or abort("Usage: stop_agent [name]")
+    orchestrator.orchestrate(:stop_agent, name)
+
+  when "monitor"       then orchestrator.orchestrate(:monitor)
+  when "restart"       then orchestrator.orchestrate(:restart)
+  when "cleanup"       then orchestrator.orchestrate(:cleanup)
+  when "full_cycle"    then orchestrator.orchestrate(:full_cycle)
+  when "inventory"     then orchestrator.orchestrate(:inventory)
+  when "resource_usage" then orchestrator.orchestrate(:resource_usage)
+
+  when "logs"
+    name = ARGV[1] or abort("Usage: logs [name] [--follow] [--tail N]")
+    opts = {}
+    opts[:follow] = ARGV.include?("--follow")
+    if idx = ARGV.index("--tail")
+      opts[:tail] = ARGV[idx+1].to_i
     end
+    orchestrator.orchestrate(:logs, name, opts)
+
   else
-    puts "Usage: ruby agents_orchestrator.rb [start|start_agent[agent_name]|stop|stop_agent[agent_name]|monitor|restart|cleanup|full_cycle|inventory|resource_usage|logs[agent]]"
-    puts "\nExample: ruby agents_orchestrator.rb start"
-    puts "  To start all defined AI agent containers."
-    puts "\nExample: ruby agents_orchestrator.rb stop"
-    puts "  To stop all running AI agent containers."
-    puts "\nExample: ruby agents_orchestrator.rb full_cycle"
-    puts "  To stop, clean up, build (if needed), and then start all agents."
-    puts "\nExample: ruby agents_orchestrator.rb resource_usage"
-    puts "  To display real-time CPU/Memory usage for running agents."
-    puts "\nExample: ruby agents_orchestrator.rb logs chef_agent --follow"
-    puts "  To stream logs for the 'chef_agent' container."
+    puts "Usage: ruby cocina.rb [start|start_agent name|stop|stop_agent name|monitor|restart|cleanup|full_cycle|inventory|resource_usage|logs name]"
   end
 end
 
