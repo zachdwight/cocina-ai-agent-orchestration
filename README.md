@@ -1,221 +1,290 @@
-# `cocina` - Docker Agent Orchestrator
+# 🍳 `cocina` — AI Agent Orchestrator
 
-`cocina.rb` is a Ruby script designed to orchestrate the lifecycle of multiple AI agents running in Docker containers. It allows you to build, start, stop, monitor, and clean up your agents with simple commands.
+> *cocina* (Spanish) — _kitchen_. Because great AI agents, like great meals, need a well-run kitchen.
+
+`cocina.rb` is a Ruby script that orchestrates the lifecycle of multiple AI agents running in Docker containers. Each agent is a containerized Claude-powered worker with its own role, task, and personality. Cocina handles the boring parts — building, starting, stopping, monitoring, and cleaning up — so your agents can focus on thinking.
+
+---
+
+## How It Works
+
+```
+┌─────────────────────────────────────────┐
+│              cocina.rb                  │
+│         (the expeditor)                 │
+└────────────┬──────────────┬────────────┘
+             │              │
+     ┌───────▼──────┐ ┌─────▼────────┐
+     │  chef_agent  │ │  sous_agent  │
+     │  Docker ctr  │ │  Docker ctr  │
+     │  Claude API  │ │  Claude API  │
+     └──────────────┘ └──────────────┘
+```
+
+The **Head Chef** agent plans and coordinates. The **Sous Chef** executes specific sub-tasks. Both call the Claude API and report their results to stdout (streamed via `docker logs`). Add as many agents as your kitchen needs.
+
+---
 
 ## Features
 
-* **Agent Configuration:** Define your AI agents, their Docker images, commands, environment variables, and exposed ports directly within the script or via an external JSON configuration file.
-* **Docker Integration:** Leverages `docker build`, `docker run`, `docker stop`, and `docker ps` commands to manage containers.
-* **Lifecycle Management:** Supports various actions:
-    * **Start:** Builds images (if Dockerfile found) and starts all defined agents.
-    * **Start_Agent:** Starts specific agent by name.
-    * **Stop:** Halts all running agent containers.
-    * **Stop_Agent:** Stops specific agent by name.
-    * **Monitor:** Checks and reports the status of your agents.
-    * **Restart:** Stops and then restarts all agents.
-    * **Cleanup:** Removes stopped agent containers.
-    * **Full Cycle:** Performs a stop, cleanup, build, and then start operation.
-    * **Inventory:** List out all agents (w/ details) that are registered.
-    * **Resource Usage:** Display real-time CPU/Memory usage for running agents.
-    * **Logs:** Stream logs for specific agent.
-* **Error Handling:** Provides basic error reporting for Docker commands and configuration parsing.
+| Feature | Description |
+|---|---|
+| **Claude API** | Agents call `claude-haiku-4-5-20251001` by default — fast and cost-efficient |
+| **Task-driven** | Pass any task to an agent via the `TASK` env var |
+| **JSON config** | Define agents inline or in an external `agents_config.json` |
+| **Full lifecycle** | Build, start, stop, restart, monitor, logs, cleanup — one command each |
+| **Health checks** | Waits for Docker `HEALTHCHECK` to pass before declaring an agent ready |
+| **Resource stats** | Real-time CPU/memory via `docker stats` |
+| **Compose-aware** | Automatically uses `docker compose` if a compose file is detected |
+
+---
 
 ## Prerequisites
 
+- **Ruby** 2.7+
+- **Docker** Engine running
+- **Anthropic API key** — [get one here](https://console.anthropic.com/)
+
 ---
-
-Before using `cocina.rb`, ensure you have the following installed:
-
-* **Ruby:** Version 2.x or higher.
-* **Docker:** Docker Engine installed and running on your system.
 
 ## Setup
 
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/zachdwight/cocina-ai-agent-orchestration.git
+cd cocina-ai-agent-orchestration
+```
+
+### 2. Set your API key
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Cocina forwards this from your host environment into each container automatically. Never hardcode keys.
+
+### 3. Run it
+
+```bash
+ruby cocina.rb start
+```
+
+That's it. Cocina builds the Docker images (if needed), launches the agents, and monitors them.
+
 ---
 
-1.  **Clone or Download:** Get the `cocina.rb` script.
-2.  **Agent Dockerfiles:** Create `Dockerfile`s for your AI agents. By default, the script expects a directory named after your image (without the tag) containing the Dockerfile.
-    * For `my_ai_agent_chef:latest`, create a directory `./my_ai_agent_chef/` with its `Dockerfile` inside.
-    * For `my_ai_agent_sous:latest`, create a directory `./my_ai_agent_sous/` with its `Dockerfile` inside.
-    * **Example Directory Structure:**
-        ```
-        .
-        ├── cocina.rb
-        ├── my_ai_agent_chef/
-        │   └── Dockerfile
-        │   └── chef_agent.py
-        └── my_ai_agent_sous/
-            └── Dockerfile
-            └── sous_agent.py
-        ```
-3.  **Pre-build (Optional but Recommended):** You can pre-build your agent images manually before running `cocina.rb` for the first time, or let the script attempt to build them during the `start` or `full_cycle` actions.
+## Project Structure
 
-    ```bash
-    docker build -t my_ai_agent_chef:latest ./my_ai_agent_chef
-    docker build -t my_ai_agent_sous:latest ./my_ai_agent_sous
-    ```
+```
+.
+├── cocina.rb                   # Orchestrator — the kitchen manager
+├── my_ai_agent_chef/
+│   ├── Dockerfile
+│   ├── chef_agent.py           # Head Chef — planner agent (Claude)
+│   └── requirements.txt
+└── my_ai_agent_sous/
+    ├── Dockerfile
+    ├── sous_agent.py           # Sous Chef — executor agent (Claude)
+    └── requirements.txt
+```
+
+---
 
 ## Configuration
 
----
+### Inline (default)
 
-### Default Configuration
-
-The script comes with a default set of agents defined within the `DockerAgentOrchestrator` class:
+Agents are defined in `cocina.rb` with sensible defaults:
 
 ```ruby
-@agents = [
-        {
-          name: "chef_agent",
-          description: "Primary agent utilizing ChatGPT or Gemini or etc etc etc", #describe the agent for inventory purposes / audit
-          build: "prod", #define if agent is prod or test or something else
-          externals: "none", # list if any RAG resources are involved with agent
-          image: "my_ai_agent_chef:latest", # Replace with your actual agent image
-          command: "python /app/chef_agent.py", # Command to run inside the container
-          env: { "API_KEY" => "some_key_alpha", "AGENT_ID" => "chef_001" },
-          ports: ["8000:8000"] # Example: exposing port 8000
-        },
-        {
-          name: "sous_agent",
-          description: "Agent to help primary.", #describe the agent for inventory purposes / audit
-          build: "prod", #define if agent is prod or test or something else
-          externals: "none", # list if any RAG resources are involved with agent
-          image: "my_ai_agent_sous:latest", # Replace with your actual agent image
-          command: "python /app/sous_agent.py",
-          env: { "API_KEY" => "some_key_beta", "AGENT_ID" => "sous_001" },
-          ports: [] # No ports exposed for this agent
-        }
-      ]
+{
+  name: "chef_agent",
+  description: "Primary Claude agent — plans and coordinates tasks",
+  build: "prod",
+  externals: "none",
+  image: "my_ai_agent_chef:latest",
+  command: "python /app/chef_agent.py",
+  env: {
+    "ANTHROPIC_API_KEY" => ENV.fetch("ANTHROPIC_API_KEY", ""),
+    "AGENT_ID"          => "chef_001",
+    "TASK"              => "Plan a 3-course French dinner menu for 4 guests."
+  },
+  ports: ["8000:8000"]
+}
 ```
 
-Optional: External JSON Configuration (Recommended for Production)
+Change `TASK` to give your agent a different job. Change the system prompt in the Python file to change its personality.
 
-For more flexible management, you can define your agents in a separate JSON file (e.g., `agents_config.json`) and pare details you don't need:
+### External JSON (recommended for production)
+
+Define agents in `agents_config.json`:
+
 ```json
 [
   {
     "name": "chef_agent",
+    "description": "Head Chef — plans the menu",
     "image": "my_ai_agent_chef:latest",
     "command": "python /app/chef_agent.py",
-    "env": { "API_KEY": "your_chef_api_key", "AGENT_ID": "chef_001" },
+    "env": {
+      "ANTHROPIC_API_KEY": "your_key_here",
+      "AGENT_ID": "chef_001",
+      "TASK": "Design a 5-course tasting menu for a Michelin-star dinner."
+    },
     "ports": ["8000:8000"]
   },
   {
     "name": "sous_agent",
+    "description": "Sous Chef — executes the recipes",
     "image": "my_ai_agent_sous:latest",
     "command": "python /app/sous_agent.py",
-    "env": { "API_KEY": "your_sous_api_key", "AGENT_ID": "sous_001" },
-    "ports": []
-  },
-  {
-    "name": "data_logger",
-    "image": "my_data_logger:1.0",
-    "command": "node /app/logger.js",
-    "env": { "LOG_LEVEL": "info" },
+    "env": {
+      "ANTHROPIC_API_KEY": "your_key_here",
+      "AGENT_ID": "sous_001",
+      "TASK": "Write a detailed recipe for duck confit with cherry reduction."
+    },
     "ports": []
   }
 ]
-
 ```
 
-To use an external configuration file, initialize the `DockerAgentOrchestrator` with the file path:
+Load it with:
+
 ```ruby
 orchestrator = DockerAgentOrchestrator.new("agents_config.json")
 ```
 
-## Usage
-
 ---
 
-Run the script from your terminal, passing one of the supported actions as an argument:
+## Commands
 
 ```bash
-ruby cocina.rb [action]
+ruby cocina.rb [command] [agent_name] [options]
 ```
 
-Available Actions:
-- `start` : Builds Docker images (if their context directory and Dockerfile exist) and then starts all defined AI agent containers.
-- `stop` : Stops all currently running AI agent containers managed by Cocina.
-- `start_agent[agent_name]` : Start specific agent.
-- `stop_agent[agent_name]` : Stop specific agent.
-- `monitor` : Displays the current running status (container ID, status, name) of all configured agents.
-- `restart` : Stops all agents and then starts them again.
-- `clean_up` : Attempts to remove any stopped containers associated with the defined agents. 
-- `full_cycle` : Executes a complete lifecycle: stops, cleans up, builds (if needed), and then starts all agents. This is useful for a fresh deployment.
-- `inventory` : Lists out all registered agents and additional details.
-- `resource_usage` : Lists out all resource usage via `docker stats` command.
-- `logs[agent_name]` : Displays logs for a specific agent via `docker logs` command.
+| Command | Description |
+|---|---|
+| `start` | Build images + start all agents + monitor |
+| `stop` | Stop all running agents |
+| `start_agent NAME` | Start a single agent by name |
+| `stop_agent NAME` | Stop a single agent by name |
+| `monitor` | Show running status of all agents |
+| `restart` | Stop then start all agents |
+| `cleanup` | Remove stopped containers |
+| `full_cycle` | Stop → cleanup → build → start → monitor |
+| `inventory` | List all registered agents with details |
+| `resource_usage` | Live CPU/memory stats via `docker stats` |
+| `logs NAME` | Print logs for an agent |
+| `logs NAME --follow` | Stream logs live |
+| `logs NAME --tail 50` | Show last N lines |
+
 ---
 
-## Example 
+## Example Session
 
 ```bash
-me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb start
+# Fire up the kitchen
+$ ruby cocina.rb start
 
 --- Building Docker Images ---
-Attempting to build image: my_ai_agent_chef:latest from ./my_ai_agent_chef
-Successfully built image: my_ai_agent_chef:latest
-Attempting to build image: my_ai_agent_sous:latest from ./my_ai_agent_sous
-Successfully built image: my_ai_agent_sous:latest
+Attempting to build image: my_ai_agent_chef:latest
+Successfully built my_ai_agent_chef:latest
+Attempting to build image: my_ai_agent_sous:latest
+Successfully built my_ai_agent_sous:latest
 --- Image Building Complete ---
 
 --- Starting AI Agents ---
 Starting container for chef_agent...
-Started chef_agent (Container ID: b07d6ff5e36b8c7faf55c780072b2468e72d13dab327fe5652c17b4a81ec72b7)
+Started chef_agent (Container ID: b07d6ff5e36b...)
+No HEALTHCHECK defined for chef_agent; skipping health wait.
 Starting container for sous_agent...
-Started sous_agent (Container ID: d78fd2ce8f8dc3e077f51d93426091fd054df517019f96a2bd23251539bb75ee)
+Started sous_agent (Container ID: d78fd2ce8f8d...)
+No HEALTHCHECK defined for sous_agent; skipping health wait.
 --- AI Agents Started ---
 
 --- Monitoring AI Agents ---
-Agent: chef_agent, Status: Up Less than a second, ID: b07d6ff5e36b
-Agent: sous_agent, Status: Up Less than a second, ID: d78fd2ce8f8d
---- Monitoring Complete ---
-
-```
-
-Let a few minutes pass by for the agents to complete their tasks...
-
-``` bash
-me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb monitor
-
---- Monitoring AI Agents ---
-Agent: chef_agent is not running.
-Agent: sous_agent is not running.
-No AI agents are currently running.
+Agent: chef_agent, Status: Up 2 seconds, ID: b07d6ff5e36b
+Agent: sous_agent, Status: Up 2 seconds, ID: d78fd2ce8f8d
 --- Monitoring Complete ---
 ```
 
-List out the inventory of agents to confirm details...
+```bash
+# Watch what the Head Chef is thinking
+$ ruby cocina.rb logs chef_agent
 
-``` bash
-me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb inventory
+[Head Chef Agent | ID: chef_001] Starting...
+[Head Chef Agent | ID: chef_001] Task: Plan a 3-course French dinner menu for 4 guests.
+
+[Head Chef Agent] Calling Claude API...
+[Head Chef Agent | ID: chef_001] Result:
+
+Here is a classic 3-course French dinner menu for 4 guests:
+
+**Entrée**
+Soupe à l'oignon gratinée — French onion soup with Gruyère crouton
+...
+
+[Head Chef Agent | ID: chef_001] Done. (Input tokens: 42, Output tokens: 318)
+```
+
+```bash
+# Check the inventory
+$ ruby cocina.rb inventory
 
 --- AI Agent Inventory ---
-Total Agents : 2
+Total Agents: 2
 #1:
-  Name: chef_agent
-  Description: Primary agent utilizing ChatGPT or Gemini or etc etc etc
-  Image: my_ai_agent_chef:latest
-  Build: prod
-  Externals: none
+  Name:        chef_agent
+  Description: Primary Claude agent — plans and coordinates tasks
+  Image:       my_ai_agent_chef:latest
+  Build:       prod
+  Externals:   none
 #2:
-  Name: sous_agent
-  Description: Agent to help primary.
-  Image: my_ai_agent_sous:latest
-  Build: prod
-  Externals: none
+  Name:        sous_agent
+  Description: Secondary Claude agent — executes specific sub-tasks
+  Image:       my_ai_agent_sous:latest
+  Build:       prod
+  Externals:   none
 --- Inventory Complete ---
 ```
 
-Interact with specific agents by name...
-
-``` bash
-me@Boring-iMac cocina-ai-agent-orchestration % ruby cocina.rb stop_agent 'sous_agent'
+```bash
+# Stop a specific agent
+$ ruby cocina.rb stop_agent sous_agent
 
 --- Stopping AI Agent: sous_agent ---
-Stopping container for sous_agent...
 Stopped sous_agent.
 --- AI Agent Stopped ---
 ```
 
+```bash
+# Full reset and redeploy
+$ ruby cocina.rb full_cycle
+```
 
+---
+
+## Adding Your Own Agent
+
+1. Create a directory: `mkdir my_new_agent`
+2. Add a `Dockerfile` and your agent script
+3. Add the agent to the config (inline or JSON) with its `TASK` and `ANTHROPIC_API_KEY`
+4. Run `ruby cocina.rb start_agent my_new_agent`
+
+The agent script just needs to read `ANTHROPIC_API_KEY` and `TASK` from the environment and call the Claude API. See `chef_agent.py` or `sous_agent.py` for a working template.
+
+---
+
+## Tips
+
+- **Model selection:** Agents use `claude-haiku-4-5-20251001` by default (fast + cheap). Swap to `claude-sonnet-4-6` in the agent `.py` for more complex reasoning tasks.
+- **Token usage:** Each agent prints input/output token counts on exit — useful for cost tracking.
+- **Multiple tasks:** Run multiple instances of the same agent image with different `TASK` env vars by giving each a unique `name`.
+- **docker-compose:** Drop a `docker-compose.yml` in the project root and `cocina` will use `docker compose up/down` automatically.
+
+---
+
+## License
+
+MIT — cook freely.
