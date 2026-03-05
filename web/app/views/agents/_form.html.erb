@@ -1,0 +1,86 @@
+<%= form_with model: agent, class: "space-y-6" do |f| %>
+  <% if agent.errors.any? %>
+    <div class="bg-red-900/50 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300">
+      <ul class="list-disc list-inside space-y-1">
+        <% agent.errors.full_messages.each do |msg| %>
+          <li><%= msg %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <%# Basic fields %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div>
+      <%= f.label :name, class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :name, placeholder: "chef_agent",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div>
+      <%= f.label :image, class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :image, placeholder: "my_ai_agent_chef:latest",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :description, class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :description, placeholder: "What does this agent do?",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :command, class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :command, placeholder: "python /app/chef_agent.py",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div class="sm:col-span-2">
+      <%= f.label :task, "Task (sent as TASK env var to Claude)", class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_area :task, rows: 2, placeholder: "Plan a 3-course dinner menu for 4 guests.",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div>
+      <%= f.label :build_context, "Build context dir", class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :build_context, placeholder: "my_ai_agent_chef",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+    <div>
+      <%= f.label :externals, class: "block text-xs text-gray-400 mb-1" %>
+      <%= f.text_field :externals, placeholder: "none",
+            class: "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500" %>
+    </div>
+  </div>
+
+  <%# Env vars %>
+  <div>
+    <h3 class="text-xs text-gray-400 uppercase tracking-wide mb-3">Environment Variables</h3>
+    <div id="env_vars_fields" class="space-y-2">
+      <%= f.fields_for :env_vars do |ev| %>
+        <div class="flex gap-2 items-center">
+          <%= ev.text_field :key, placeholder: "KEY",
+                class: "w-1/3 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-teal-300 placeholder-gray-600 focus:outline-none focus:border-teal-500" %>
+          <span class="text-gray-600">=</span>
+          <%= ev.text_field :value, placeholder: "value",
+                class: "flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 placeholder-gray-600 focus:outline-none focus:border-teal-500" %>
+          <% if ev.object.persisted? %>
+            <%= ev.check_box :_destroy, class: "hidden", id: "destroy_ev_#{ev.object.id}" %>
+            <label for="destroy_ev_<%= ev.object.id %>"
+                   class="text-xs text-red-500 cursor-pointer hover:text-red-400 px-2">✕</label>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Ports %>
+  <div>
+    <h3 class="text-xs text-gray-400 uppercase tracking-wide mb-1">Ports (one per line, e.g. 8000:8000)</h3>
+    <textarea name="agent[ports_text]" rows="3" placeholder="8000:8000"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 placeholder-gray-600 focus:outline-none focus:border-teal-500"
+    ><%= agent.ports_list.join("\n") %></textarea>
+  </div>
+
+  <div class="flex gap-3 pt-2">
+    <%= f.submit agent.persisted? ? "Update Agent" : "Create Agent",
+          class: "px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-lg transition cursor-pointer" %>
+    <%= link_to "Cancel", agent.persisted? ? agent : agents_path,
+          class: "px-5 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-medium rounded-lg transition" %>
+  </div>
+<% end %>

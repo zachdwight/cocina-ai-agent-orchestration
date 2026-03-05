@@ -1,0 +1,62 @@
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-white">Agents</h1>
+  <%= link_to "New Agent", new_agent_path,
+        class: "px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-lg transition" %>
+</div>
+
+<% if @agents.any? %>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-800 text-gray-400 text-xs uppercase tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Image</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-left">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        <% @agents.each do |agent| %>
+          <%= turbo_stream_from "agent_#{agent.id}" %>
+          <tr class="hover:bg-gray-800/50 transition">
+            <td class="px-4 py-3">
+              <%= link_to agent.name, agent, class: "font-medium text-teal-400 hover:text-teal-300" %>
+              <% if agent.description.present? %>
+                <p class="text-xs text-gray-500 mt-0.5"><%= agent.description %></p>
+              <% end %>
+            </td>
+            <td class="px-4 py-3">
+              <code class="text-xs text-gray-400 bg-gray-800 rounded px-2 py-0.5"><%= agent.image %></code>
+            </td>
+            <td class="px-4 py-3" id="agent_status_<%= agent.id %>">
+              <%= render "agents/status_badge", agent: agent %>
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex gap-2 flex-wrap">
+                <%= button_to "Start", start_agent_path(agent), method: :post,
+                      class: "text-xs px-3 py-1.5 rounded-lg font-medium transition
+                              #{ agent.running? || agent.pending? ? 'bg-gray-700 text-gray-500' : 'bg-teal-700 hover:bg-teal-600 text-white' }",
+                      disabled: agent.running? || agent.pending?,
+                      data: { turbo_stream: true } %>
+                <%= button_to "Stop", stop_agent_path(agent), method: :post,
+                      class: "text-xs px-3 py-1.5 rounded-lg font-medium transition
+                              #{ !agent.running? ? 'bg-gray-700 text-gray-500' : 'bg-red-700 hover:bg-red-600 text-white' }",
+                      disabled: !agent.running?,
+                      data: { turbo_stream: true } %>
+                <%= link_to "Edit",   edit_agent_path(agent), class: "text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300 transition" %>
+                <%= button_to "Delete", agent, method: :delete,
+                      class: "text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-red-900 text-gray-500 hover:text-red-300 transition",
+                      data: { turbo_confirm: "Delete #{agent.name}?" } %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <div class="text-center py-20 text-gray-600">
+    <p class="text-lg mb-3">No agents configured yet.</p>
+    <%= link_to "Create your first agent", new_agent_path, class: "text-teal-400 hover:text-teal-300 underline" %>
+  </div>
+<% end %>

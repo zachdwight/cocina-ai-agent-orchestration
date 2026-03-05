@@ -1,0 +1,7 @@
+<% colors = { "running" => "bg-green-500", "pending" => "bg-yellow-500",
+              "error" => "bg-red-500", "stopped" => "bg-gray-600" } %>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium
+             <%= colors.fetch(agent.status, "bg-gray-600") %> text-white">
+  <span class="w-1.5 h-1.5 rounded-full bg-white/60 <%= agent.running? ? "animate-pulse" : "" %>"></span>
+  <%= agent.status %>
+</span>

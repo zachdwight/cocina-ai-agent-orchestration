@@ -1,0 +1,121 @@
+<%= turbo_stream_from "agent_#{@agent.id}" %>
+
+<div class="flex items-start justify-between mb-6 gap-4">
+  <div>
+    <h1 class="text-2xl font-bold text-white"><%= @agent.name %></h1>
+    <p class="text-sm text-gray-500 mt-1"><%= @agent.description.presence || @agent.image %></p>
+  </div>
+  <div id="agent_status_<%= @agent.id %>">
+    <%= render "agents/status_badge", agent: @agent %>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+  <%# Info card %>
+  <div class="col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Configuration</h2>
+    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+      <span class="text-gray-500">Image</span>
+      <code class="text-gray-300 truncate"><%= @agent.image %></code>
+      <span class="text-gray-500">Command</span>
+      <code class="text-gray-300 truncate"><%= @agent.command %></code>
+      <span class="text-gray-500">Task</span>
+      <span class="text-gray-300"><%= @agent.task.presence || "—" %></span>
+      <span class="text-gray-500">Ports</span>
+      <span class="text-gray-300"><%= @agent.ports_list.join(", ").presence || "none" %></span>
+      <span class="text-gray-500">Container ID</span>
+      <code class="text-gray-400 text-xs"><%= @agent.container_id.presence || "—" %></code>
+    </div>
+
+    <% if @agent.env_vars.any? %>
+      <div class="pt-2 border-t border-gray-800">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Env Vars</p>
+        <% @agent.env_vars.each do |ev| %>
+          <div class="flex gap-2 text-xs">
+            <code class="text-teal-400"><%= ev.key %></code>
+            <span class="text-gray-600">=</span>
+            <code class="text-gray-400 truncate"><%= ev.key.include?("KEY") ? "••••••••" : ev.value %></code>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+
+  <%# Actions card %>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">Actions</h2>
+    <div class="space-y-2">
+      <%= button_to "Start",      start_agent_path(@agent),      method: :post,
+            class: "w-full py-2 text-sm font-medium rounded-lg transition
+                    #{ @agent.running? || @agent.pending? ? 'bg-gray-700 text-gray-500' : 'bg-teal-600 hover:bg-teal-500 text-white' }",
+            disabled: @agent.running? || @agent.pending?,
+            data: { turbo_stream: true } %>
+      <%= button_to "Stop",       stop_agent_path(@agent),       method: :post,
+            class: "w-full py-2 text-sm font-medium rounded-lg transition
+                    #{ !@agent.running? ? 'bg-gray-700 text-gray-500' : 'bg-red-700 hover:bg-red-600 text-white' }",
+            disabled: !@agent.running?,
+            data: { turbo_stream: true } %>
+      <%= button_to "Full Cycle", full_cycle_agent_path(@agent), method: :post,
+            class: "w-full py-2 text-sm font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 transition" %>
+      <%= button_to "Build Image", build_image_agent_path(@agent), method: :post,
+            class: "w-full py-2 text-sm font-medium rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 transition" %>
+      <%= link_to "Edit", edit_agent_path(@agent),
+            class: "block w-full py-2 text-sm font-medium text-center rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 transition mt-4" %>
+    </div>
+  </div>
+</div>
+
+<%# Live logs %>
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-8"
+     data-controller="agent-logs"
+     data-agent-logs-agent-id-value="<%= @agent.id %>">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Live Logs</h2>
+    <div class="flex gap-2">
+      <button data-action="click->agent-logs#startStream"
+              data-agent-logs-target="streamBtn"
+              class="text-xs px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white transition">
+        Stream
+      </button>
+      <button data-action="click->agent-logs#stopStream"
+              data-agent-logs-target="stopBtn"
+              disabled
+              class="text-xs px-3 py-1.5 rounded-lg bg-gray-700 text-gray-500 transition disabled:opacity-50">
+        Stop
+      </button>
+    </div>
+  </div>
+  <pre data-agent-logs-target="output"
+       class="h-80 overflow-y-auto bg-gray-950 rounded-lg p-4 text-xs text-green-400 font-mono whitespace-pre-wrap leading-relaxed">Click "Stream" to tail live logs.</pre>
+</div>
+
+<%# Run history %>
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <div class="px-5 py-4 flex items-center justify-between border-b border-gray-800">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide">Run History</h2>
+    <%= link_to "All runs", agent_agent_runs_path(@agent), class: "text-xs text-teal-400 hover:text-teal-300" %>
+  </div>
+  <% if @agent_runs.any? %>
+    <table class="w-full text-sm">
+      <tbody class="divide-y divide-gray-800">
+        <% @agent_runs.each do |run| %>
+          <tr class="hover:bg-gray-800/50 transition">
+            <td class="px-5 py-3 text-gray-300"><%= run.action %></td>
+            <td class="px-5 py-3">
+              <% badge = { "completed" => "text-green-400", "failed" => "text-red-400",
+                           "running" => "text-yellow-400", "pending" => "text-gray-400" } %>
+              <span class="<%= badge.fetch(run.status, "text-gray-400") %>"><%= run.status %></span>
+            </td>
+            <td class="px-5 py-3 text-gray-500 text-xs"><%= run.created_at.strftime("%b %d, %H:%M") %></td>
+            <td class="px-5 py-3 text-gray-500 text-xs"><%= run.duration ? "#{run.duration}s" : "—" %></td>
+            <td class="px-5 py-3">
+              <%= link_to "View", agent_agent_run_path(@agent, run), class: "text-xs text-teal-400 hover:text-teal-300" %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% else %>
+    <p class="px-5 py-8 text-sm text-gray-600 text-center">No runs yet.</p>
+  <% end %>
+</div>

@@ -1,0 +1,3 @@
+<%= turbo_stream.replace "agent_status_#{@agent.id}" do %>
+  <%= render "agents/status_badge", agent: @agent %>
+<% end %>
