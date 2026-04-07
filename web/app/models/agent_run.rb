@@ -1,5 +1,6 @@
 class AgentRun < ApplicationRecord
   belongs_to :agent
+  has_many :message_logs, dependent: :destroy, inverse_of: :agent_run
 
   ACTIONS  = %w[start stop full_cycle build].freeze
   STATUSES = %w[pending running completed failed].freeze

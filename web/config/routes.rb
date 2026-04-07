@@ -14,6 +14,19 @@ Rails.application.routes.draw do
     resources :agent_runs, only: [:index, :show]
   end
 
+  # Workflows
+  resources :workflows, param: :id do
+    member do
+      post :start
+      get :messages
+    end
+  end
+
+  # Helper route for workflow paths
+  def workflow_path(workflow)
+    workflows_path(workflow.is_a?(String) ? workflow : workflow.workflow_id)
+  end
+
   # ActionCable
   mount ActionCable.server => "/cable"
 end

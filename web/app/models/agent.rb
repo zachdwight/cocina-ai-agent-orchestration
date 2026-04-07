@@ -1,6 +1,9 @@
 class Agent < ApplicationRecord
   has_many :agent_runs, dependent: :destroy
   has_many :env_vars,   dependent: :destroy, autosave: true
+  has_many :sent_messages, class_name: 'AgentMessage', foreign_key: :sender_agent_id, dependent: :nullify
+  has_many :received_messages, class_name: 'AgentMessage', foreign_key: :receiver_agent_id, dependent: :nullify
+  has_many :workflow_steps, foreign_key: :agent_id, dependent: :nullify
 
   accepts_nested_attributes_for :env_vars,
     allow_destroy: true,
@@ -12,6 +15,8 @@ class Agent < ApplicationRecord
   validates :image,   presence: true
   validates :command, presence: true
   validates :status,  inclusion: { in: %w[stopped running error pending] }
+  validates :mode,    inclusion: { in: %w[env rabbitmq hybrid] }, allow_nil: true
+  validates :rabbitmq_queue_name, format: { with: /\A[a-z0-9_\-\.]+\z/ }, allow_nil: true
 
   def ports_list
     JSON.parse(ports || "[]")
