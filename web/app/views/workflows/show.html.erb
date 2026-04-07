@@ -1,0 +1,158 @@
+<div class="container mx-auto px-4 py-8" data-controller="workflow" data-workflow-id="<%= @workflow.workflow_id %>">
+  <div class="mb-8">
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-3xl font-bold"><%= @workflow.name || "Workflow" %></h1>
+      <span class="px-4 py-2 rounded-full text-sm font-semibold <%= status_badge_class(@workflow.status) %>">
+        <%= @workflow.status.upcase %>
+      </span>
+    </div>
+
+    <% if @workflow.description.present? %>
+      <p class="text-gray-600 mb-4"><%= @workflow.description %></p>
+    <% end %>
+  </div>
+
+  <!-- Progress Section -->
+  <div class="bg-white rounded shadow p-6 mb-8">
+    <h2 class="text-xl font-bold mb-4">Progress</h2>
+    <div class="flex items-center gap-4 mb-4">
+      <div class="flex-1">
+        <div class="bg-gray-200 rounded-full h-4" id="workflow_progress">
+          <div class="bg-blue-500 h-4 rounded-full transition-all duration-300" style="width: <%= @workflow.progress_percent %>%"></div>
+        </div>
+      </div>
+      <div class="text-2xl font-bold text-blue-500"><%= @workflow.progress_percent %>%</div>
+    </div>
+    <div class="grid grid-cols-4 gap-4 text-sm">
+      <div>
+        <div class="font-bold text-lg"><%= @workflow.completed_steps %></div>
+        <div class="text-gray-600">Completed</div>
+      </div>
+      <div>
+        <div class="font-bold text-lg"><%= @workflow.running_steps %></div>
+        <div class="text-gray-600">Running</div>
+      </div>
+      <div>
+        <div class="font-bold text-lg"><%= @workflow.pending_steps %></div>
+        <div class="text-gray-600">Pending</div>
+      </div>
+      <div>
+        <div class="font-bold text-lg"><%= @workflow.total_steps %></div>
+        <div class="text-gray-600">Total Steps</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="mb-8 flex gap-2">
+    <% if @workflow.pending? %>
+      <%= button_to "Start Workflow", start_workflow_path(@workflow.workflow_id), method: :post, class: "bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600" %>
+    <% end %>
+    <%= link_to "View Messages", workflow_messages_path(@workflow.workflow_id), class: "bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600" %>
+    <%= link_to "Edit", edit_workflow_path(@workflow.workflow_id), class: "bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600" %>
+    <%= link_to "Delete", workflow_path(@workflow.workflow_id), method: :delete, data: { confirm: "Are you sure?" }, class: "bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" %>
+  </div>
+
+  <!-- Workflow Steps -->
+  <div class="bg-white rounded shadow p-6 mb-8">
+    <h2 class="text-xl font-bold mb-4">Steps</h2>
+    <% if @workflow_steps.any? %>
+      <div class="space-y-4">
+        <% @workflow_steps.each do |step| %>
+          <div id="step_<%= step.step_id %>" class="border-l-4 <%= step_border_class(step.status) %> p-4 bg-gray-50">
+            <div class="flex justify-between items-start mb-2">
+              <div>
+                <h3 class="font-bold text-lg"><%= step.description %></h3>
+                <p class="text-sm text-gray-600">Agent: <strong><%= step.agent_id %></strong></p>
+              </div>
+              <span class="px-3 py-1 rounded text-xs font-semibold <%= step_status_badge(step.status) %>">
+                <%= step.status.upcase %>
+              </span>
+            </div>
+
+            <% if step.dependencies.any? %>
+              <div class="text-xs text-gray-600 mb-2">
+                Depends on: <%= step.dependencies.join(", ") %>
+              </div>
+            <% end %>
+
+            <% if step.started_at && step.completed_at %>
+              <div class="text-xs text-gray-600">
+                Duration: <%= number_with_precision(step.duration, precision: 2) %>s
+              </div>
+            <% end %>
+
+            <% if step.result_data && step.result_data["error"].nil? %>
+              <div class="mt-3 p-3 bg-white rounded border text-xs overflow-auto max-h-48">
+                <strong>Result:</strong>
+                <pre><%= truncate(step.result_data.to_json, length: 500) %></pre>
+              </div>
+            <% elsif step.result_data && step.result_data["error"] %>
+              <div class="mt-3 p-3 bg-red-50 rounded border border-red-200 text-xs text-red-700">
+                <strong>Error:</strong> <%= step.result_data["error"] %>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <p class="text-gray-500">No steps defined for this workflow.</p>
+    <% end %>
+  </div>
+
+  <!-- Recent Messages -->
+  <div class="bg-white rounded shadow p-6">
+    <h2 class="text-xl font-bold mb-4">Recent Messages</h2>
+    <div id="workflow_messages" data-controller="message-log" data-workflow-id="<%= @workflow.workflow_id %>">
+      <% if @messages.any? %>
+        <div class="space-y-2 max-h-96 overflow-auto">
+          <% @messages.each do |msg| %>
+            <div class="p-3 bg-gray-50 rounded text-sm border-l-4 <%= message_type_border(msg.message_type) %>">
+              <div class="flex justify-between items-start">
+                <div>
+                  <strong><%= msg.message_type.upcase %></strong>
+                  <% if msg.sender_agent_id || msg.receiver_agent_id %>
+                    <br><span class="text-xs text-gray-600">
+                      <% if msg.sender_agent_id %>
+                        From: <strong><%= msg.sender_agent_id %></strong>
+                      <% end %>
+                      <% if msg.receiver_agent_id %>
+                        To: <strong><%= msg.receiver_agent_id %></strong>
+                      <% end %>
+                    </span>
+                  <% end %>
+                </div>
+                <span class="text-xs text-gray-600"><%= msg.created_at.strftime("%H:%M:%S") %></span>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="text-gray-500 text-sm">No messages yet.</p>
+      <% end %>
+    </div>
+  </div>
+</div>
+
+<script>
+// Subscribe to workflow updates via ActionCable
+App.cable.subscriptions.create(
+  { channel: "WorkflowChannel", workflow_id: '<%= @workflow.workflow_id %>' },
+  {
+    received: function(data) {
+      console.log('Workflow update:', data);
+      if (data.type === 'step') {
+        const stepEl = document.getElementById(`step_${data.step_id}`);
+        if (stepEl) {
+          // Update step status class
+          location.reload(); // Simple refresh for now
+        }
+      } else if (data.type === 'workflow_state') {
+        // Update progress bar
+        const percent = data.progress;
+        document.querySelector('#workflow_progress > div').style.width = percent + '%';
+      }
+    }
+  }
+);
+</script>

@@ -1,0 +1,165 @@
+<div class="container mx-auto px-4 py-8 max-w-2xl">
+  <h1 class="text-3xl font-bold mb-8">Create New Workflow</h1>
+
+  <%= form_with(model: @workflow, local: true) do |form| %>
+    <% if @workflow.errors.any? %>
+      <div class="bg-red-50 border border-red-200 rounded p-4 mb-6">
+        <h2 class="text-red-800 font-bold mb-2"><%= pluralize(@workflow.errors.count, "error") %> prohibited this workflow:</h2>
+        <ul class="text-red-700 text-sm">
+          <% @workflow.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <!-- Workflow Details -->
+    <div class="bg-white rounded shadow p-6 mb-6">
+      <h2 class="text-lg font-bold mb-4">Workflow Details</h2>
+
+      <div class="mb-4">
+        <%= form.label :name, class: "block text-sm font-bold mb-2" %>
+        <%= form.text_field :name, placeholder: "e.g., Cook a 3-course meal", class: "w-full px-4 py-2 border rounded" %>
+      </div>
+
+      <div class="mb-4">
+        <%= form.label :description, class: "block text-sm font-bold mb-2" %>
+        <%= form.text_area :description, rows: 4, placeholder: "Describe what this workflow does...", class: "w-full px-4 py-2 border rounded" %>
+      </div>
+    </div>
+
+    <!-- Workflow Steps -->
+    <div class="bg-white rounded shadow p-6 mb-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-bold">Workflow Steps</h2>
+        <button type="button" id="add-step-btn" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+          + Add Step
+        </button>
+      </div>
+
+      <div id="steps-container" class="space-y-4">
+        <!-- Steps will be added here by JavaScript -->
+      </div>
+
+      <div id="no-steps" class="text-center py-8 text-gray-500">
+        <p>No steps added yet. Click "Add Step" to get started.</p>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="flex gap-4">
+      <%= form.submit "Create Workflow", class: "bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600" %>
+      <%= link_to "Cancel", workflows_path, class: "bg-gray-300 text-gray-700 px-6 py-2 rounded hover:bg-gray-400" %>
+    </div>
+  <% end %>
+</div>
+
+<script>
+const agents = <%= @agents.to_json.html_safe %>;
+let stepCount = 0;
+
+document.getElementById('add-step-btn').addEventListener('click', function(e) {
+  e.preventDefault();
+  addStep();
+});
+
+function addStep() {
+  stepCount++;
+  const container = document.getElementById('steps-container');
+  const noSteps = document.getElementById('no-steps');
+
+  // Hide "no steps" message if first step
+  if (stepCount === 1) {
+    noSteps.style.display = 'none';
+  }
+
+  const stepHtml = `
+    <div class="border rounded p-4 bg-gray-50 step-item" data-step-id="${stepCount}">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="font-bold text-sm">Step ${stepCount}</h3>
+        <button type="button" class="remove-step-btn text-red-500 hover:text-red-700 text-sm">Remove</button>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-bold mb-2">Description</label>
+        <textarea name="workflow[steps][${stepCount - 1}][description]" placeholder="What should this step do?" class="w-full px-3 py-2 border rounded text-sm" rows="3"></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-bold mb-2">Agent</label>
+        <select name="workflow[steps][${stepCount - 1}][agent_id]" class="w-full px-3 py-2 border rounded text-sm">
+          <option value="">Select an agent</option>
+          ${agents.map(agent => `<option value="${agent.name}">${agent.name} - ${agent.description}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-bold mb-2">Dependencies</label>
+        <div class="space-y-2">
+          <div class="text-xs text-gray-600">Select other steps this step depends on:</div>
+          <div id="dependencies-${stepCount}" class="space-y-1">
+            <span class="text-xs text-gray-500">No previous steps available</span>
+          </div>
+        </div>
+        <input type="hidden" name="workflow[steps][${stepCount - 1}][dependencies]" class="dependencies-input" value="[]">
+      </div>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', stepHtml);
+
+  // Update all dependency lists
+  updateDependencyLists();
+
+  // Add remove listener
+  document.querySelector(`[data-step-id="${stepCount}"] .remove-step-btn`).addEventListener('click', function(e) {
+    e.preventDefault();
+    this.closest('.step-item').remove();
+    stepCount--;
+    if (stepCount === 0) {
+      noSteps.style.display = 'block';
+    }
+    updateDependencyLists();
+  });
+}
+
+function updateDependencyLists() {
+  const steps = document.querySelectorAll('.step-item');
+
+  steps.forEach((step, index) => {
+    const stepId = step.getAttribute('data-step-id');
+    const depsContainer = document.getElementById(`dependencies-${stepId}`);
+    const depsInput = step.querySelector('.dependencies-input');
+
+    // Show available previous steps
+    let html = '';
+    if (index === 0) {
+      html = '<span class="text-xs text-gray-500">First step - no dependencies</span>';
+    } else {
+      html = '<div class="flex flex-wrap gap-2">';
+      for (let i = 0; i < index; i++) {
+        html += `
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" value="${i}" class="dep-checkbox" />
+            Step ${i + 1}
+          </label>
+        `;
+      }
+      html += '</div>';
+    }
+
+    depsContainer.innerHTML = html;
+
+    // Add change listeners to checkboxes
+    const checkboxes = depsContainer.querySelectorAll('.dep-checkbox');
+    checkboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        const selected = Array.from(checkboxes)
+          .filter(cb => cb.checked)
+          .map(cb => cb.value);
+        depsInput.value = JSON.stringify(selected);
+      });
+    });
+  });
+}
+</script>

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: cocina-rabbitmq
+    ports:
+      - "5672:5672"      # AMQP port
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: cocina
+      RABBITMQ_DEFAULT_PASS: cocina_pass
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cocina-net
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  chef_agent:
+    build: ./my_ai_agent_chef
+    container_name: chef_agent
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      AGENT_ID: chef_001
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: cocina
+      RABBITMQ_PASS: cocina_pass
+      RABBITMQ_QUEUE: chef_tasks
+      MODE: hybrid
+    networks:
+      - cocina-net
+    restart: unless-stopped
+
+  sous_agent_1:
+    build: ./my_ai_agent_sous
+    container_name: sous_agent_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      AGENT_ID: sous_001
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: cocina
+      RABBITMQ_PASS: cocina_pass
+      RABBITMQ_QUEUE: sous_tasks
+      MODE: hybrid
+    networks:
+      - cocina-net
+    restart: unless-stopped
+
+  sous_agent_2:
+    build: ./my_ai_agent_sous
+    container_name: sous_agent_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      AGENT_ID: sous_002
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: cocina
+      RABBITMQ_PASS: cocina_pass
+      RABBITMQ_QUEUE: sous_tasks
+      MODE: hybrid
+    networks:
+      - cocina-net
+    restart: unless-stopped
+
+networks:
+  cocina-net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
